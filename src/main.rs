@@ -1,8 +1,9 @@
 use csv::WriterBuilder;
-use drogue_ttn::v3::{Message, Payload};
+use drogue_ttn::v3::{Message, Payload, DataRate};
 use futures::{executor::block_on, stream::StreamExt};
 use paho_mqtt::{self as mqtt};
 use std::{process, time::Duration, fs::{OpenOptions}};
+use std::path::Path;
 
 // TODO: Replace with your own TTN identifiers
 const HOST: &str = "eu1.cloud.thethings.network:1883";
@@ -52,14 +53,36 @@ fn main() {
         println!("Subscribing to topics: {:?}", TOPICS);
         cli.subscribe_many(&TOPICS, &QOS).await?;
 
-        //Open or crate file
+       let path = "/home/alleregni/csvexample.csv";
+  
+      let mut options = OpenOptions::new();
+      options.write(true).create(true).append(true);
+  
+      let file_exists = Path::new(path).exists();
+  
+      let mut csv_writer = match options.open(path) {
+          Ok(file) => {
+              if file_exists {
+                  WriterBuilder::new()
+                      .has_headers(false)
+                      .from_writer(file)
+              } else {
+                  let mut csv_writer = WriterBuilder::new()
+                      .has_headers(true)
+                      .from_writer(file);
+  
+                  let header = ["GatewayId", "UTC Time","Latitude","Longitude","Altitude","RSSI","SNR","Spreading Factor"];
+                  csv_writer.write_record(&header).expect("Errore durante la scrittura dell'intestazione");
+                  csv_writer.flush().expect("Errore durante il flushing del writer");
+  
+                  csv_writer
+              }
+              
 
-        let file_result = OpenOptions::new().write(true).create(true).append(true).open("/home/alleregni/csvexample.csv");
-        match file_result{
-            Ok(file)=>{
-
-        println!("File opened/created");
-
+              
+          }
+          Err(_) => panic!("Impossibile aprire il file"),
+      };
         // Just loop on incoming messages.
         println!("Waiting for messages...");
 
@@ -67,8 +90,6 @@ fn main() {
         // disconnect. Therefore, when you kill this app (with a ^C or
         // whatever) the server will get an unexpected drop and then
         // should emit the LWT message.
-
-        let mut wtr = WriterBuilder::new().from_writer(file);
         while let Some(msg_opt) = strm.next().await {
             if let Some(raw) = msg_opt {
                 if let Ok(payload) =
@@ -91,18 +112,23 @@ fn main() {
                         println!("Longitude {:?}", longitude);
                         let altitude = Some(f32::from_le_bytes(buf[16..20].try_into().unwrap())).unwrap();              
                         println!("altitude {:?}", altitude);
-
+                       
                        let time = uplink.received_at;
+                       let sf = match uplink.settings.data_rate {
+                        Some(DataRate::Lora(data_rate_lora)) => data_rate_lora.spreading_factor,
+                        _ => 0, // Valore di fallback nel caso in cui il campo sia None o non sia di tipo Lora
+                    };
+                    println!("Sf: {}",sf);
 
                         let mut i = 0;
-                        while 1 < uplink.rx_metadata.len(){
+                        while i < uplink.rx_metadata.len(){
                             let gateway_id =  uplink.rx_metadata[i].gateway_ids.get("gateway_id").unwrap();
                             if gateway_id == "dlos"{
                                 let snr = uplink.rx_metadata[i].snr.unwrap();
                                 let rssi = uplink.rx_metadata[i].rssi;
                                 println!("SNR: {}, RSSI:{}",snr,rssi);
-                                wtr.write_record(&[gateway_id.to_string(), time.to_string(), latitude.to_string(), longitude.to_string(), altitude.to_string(), rssi.to_string(), snr.to_string()]).unwrap();
-                                wtr.flush().unwrap(); 
+                                csv_writer.write_record(&[gateway_id.to_string(), time.to_string(), latitude.to_string(), longitude.to_string(), altitude.to_string(), rssi.to_string(), snr.to_string(),sf.to_string()]).expect("Errore durante la scrittura del record");
+                                csv_writer.flush().expect("Errore durante il flushing del writer");
                                 break;
                                  }
 
@@ -124,9 +150,8 @@ fn main() {
                 }
             }
         }
-    }
-Err(error)=>{println!("Error opening csv file: {}",error);}
-    }
+        
+     
         // Explicit return type for the async block
         Ok::<(), mqtt::Error>(())
     }) {
