@@ -51,7 +51,7 @@ fn main() {
         println!("Subscribing to topics: {:?}", TOPICS);
         cli.subscribe_many(&TOPICS, &QOS).await?;
 
-        let path = "data/lora_gps.csv";
+        let path = "lora_gps.csv";
 
         let mut options = OpenOptions::new();
         options.write(true).create(true).append(true);
