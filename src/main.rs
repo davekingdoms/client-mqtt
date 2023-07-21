@@ -5,7 +5,7 @@ use paho_mqtt::{self as mqtt};
 use std::path::Path;
 use std::{fs::OpenOptions, process, time::Duration};
 use simple_logger::SimpleLogger;
-use log::info;
+use log::{info, error};
 
 // TODO: Replace with your own TTN identifiers
 const HOST: &str = "eu1.cloud.thethings.network:1883";
@@ -19,15 +19,15 @@ const PASSWORD: &str = "NNSXS.REZ3CZK4MCLMNC56VDWBFURJVNA6CGJTS5SRBXQ.FO4OHC6SMF
 
 fn main() {
     // Initialize the logger from the environment
-   // env_logger::init();
-    SimpleLogger::new().with_local_timestamps().init().unwrap();
+    //env_logger::init();
+    SimpleLogger::new().with_level(log::LevelFilter::Info).init().unwrap();
 
     // Create the client. Use a Client ID for a persistent session.
     // A real system should try harder to use a unique ID.
 
     // Create the client connection
     let mut cli = mqtt::AsyncClient::new(HOST).unwrap_or_else(|e| {
-        info!("Error creating the client: {:?}", e);
+        error!("Error creating the client: {:?}", e);
         process::exit(1);
     });
 
@@ -48,10 +48,10 @@ fn main() {
             .finalize();
 
         // Make the connection to the broker
-        println!("Connecting to the MQTT server...");
+        info!("Connecting to the MQTT server...");
         cli.connect(opts).await?;
 
-        println!("Subscribing to topics: {:?}", TOPICS);
+        info!("Subscribing to topics: {:?}", TOPICS);
         cli.subscribe_many(&TOPICS, &QOS).await?;
 
         let path = "lora_gps.csv";
@@ -89,7 +89,7 @@ fn main() {
             Err(_) => panic!("Unable to open file"),
         };
         // Just loop on incoming messages.
-        println!("Waiting for messages...");
+        info!("Waiting for messages...");
 
         // Note that we're not providing a way to cleanly shut down and
         // disconnect. Therefore, when you kill this app (with a ^C or
@@ -106,19 +106,17 @@ fn main() {
                         Payload::Uplink(uplink) => {
                             let buf = uplink.frame_payload;
                             info!("Uplink received");
-                            println!("frame payload: {:?}", buf);
-
-                            println!("{:?}", buf.len());
+                        
 
                             let latitude =
                                 Some(f64::from_le_bytes(buf[0..8].try_into().unwrap())).unwrap();
-                            println!("latitude {:?}", latitude);
+                           
                             let longitude =
                                 Some(f64::from_le_bytes(buf[8..16].try_into().unwrap())).unwrap();
-                            println!("Longitude {:?}", longitude);
+                       
                             let altitude =
                                 Some(f32::from_le_bytes(buf[16..20].try_into().unwrap())).unwrap();
-                            println!("altitude {:?}", altitude);
+                            
 
                             let time = uplink.received_at;
                             let sf = match uplink.settings.data_rate {
@@ -136,7 +134,7 @@ fn main() {
                                 if gateway_id == "dlos" {
                                     let snr = uplink.rx_metadata[i].snr.unwrap();
                                     let rssi = uplink.rx_metadata[i].rssi;
-                                    println!("SNR: {}, RSSI:{}", snr, rssi);
+                                    info!("frame payload: {:?}, len: {}\n\rlat: {}, long: {}, alt: {}\n\rsf: {}, SNR:{}, RSSI: {}", buf, buf.len(),latitude,longitude,altitude,sf,snr,rssi);
                                     csv_writer
                                         .write_record(&[
                                             gateway_id.to_string(),
@@ -160,9 +158,9 @@ fn main() {
                 }
             } else {
                 // A "None" means we were disconnected. Try to reconnect...
-                info!("Lost connection. Attempting reconnect.");
+                error!("Lost connection. Attempting reconnect.");
                 while let Err(err) = cli.reconnect().await {
-                    info!("Error reconnecting: {}", err);
+                    error!("Error reconnecting: {}", err);
                     // For tokio use: tokio::time::delay_for()
                     async_std::task::sleep(Duration::from_millis(1000)).await;
                 }
