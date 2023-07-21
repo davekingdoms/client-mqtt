@@ -4,6 +4,8 @@ use futures::{executor::block_on, stream::StreamExt};
 use paho_mqtt::{self as mqtt};
 use std::path::Path;
 use std::{fs::OpenOptions, process, time::Duration};
+use simple_logger::SimpleLogger;
+use log::info;
 
 // TODO: Replace with your own TTN identifiers
 const HOST: &str = "eu1.cloud.thethings.network:1883";
@@ -17,14 +19,15 @@ const PASSWORD: &str = "NNSXS.REZ3CZK4MCLMNC56VDWBFURJVNA6CGJTS5SRBXQ.FO4OHC6SMF
 
 fn main() {
     // Initialize the logger from the environment
-    env_logger::init();
+   // env_logger::init();
+    SimpleLogger::new().with_local_timestamps().init().unwrap();
 
     // Create the client. Use a Client ID for a persistent session.
     // A real system should try harder to use a unique ID.
 
     // Create the client connection
     let mut cli = mqtt::AsyncClient::new(HOST).unwrap_or_else(|e| {
-        println!("Error creating the client: {:?}", e);
+        info!("Error creating the client: {:?}", e);
         process::exit(1);
     });
 
@@ -98,10 +101,11 @@ fn main() {
                     serde_json::from_slice::<Message>(raw.payload()).map(|message| message.payload)
                 {
                     match payload {
-                        Payload::JoinAccept(_) => println!("device joined"),
+                        Payload::JoinAccept(_) => info!("Joining"),
 
                         Payload::Uplink(uplink) => {
                             let buf = uplink.frame_payload;
+                            info!("Uplink received");
                             println!("frame payload: {:?}", buf);
 
                             println!("{:?}", buf.len());
@@ -156,9 +160,9 @@ fn main() {
                 }
             } else {
                 // A "None" means we were disconnected. Try to reconnect...
-                println!("Lost connection. Attempting reconnect.");
+                info!("Lost connection. Attempting reconnect.");
                 while let Err(err) = cli.reconnect().await {
-                    println!("Error reconnecting: {}", err);
+                    info!("Error reconnecting: {}", err);
                     // For tokio use: tokio::time::delay_for()
                     async_std::task::sleep(Duration::from_millis(1000)).await;
                 }
